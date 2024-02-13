@@ -310,3 +310,11 @@ class ChatMode(str, Enum):
     Corresponds to `OpenAIAgent` if using an OpenAI model that supports
     function calling API, otherwise, corresponds to `ReActAgent`.
     """
+
+    COHERE_CONTEXT_PLUS_CITATIONS = "cohere_context_plus_citations"
+    """Corresponds to `CohereContextPlusCitationsChatEngine`.
+
+    First retrieve text from the index using the user's message, then convert the context to 
+    the Cohere documents list. Then pass the context along with prompt and user message to LLM to generate 
+    a response with citations and related documents 
+    """

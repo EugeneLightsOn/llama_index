@@ -10,6 +10,7 @@ from tenacity import (
 )
 
 from llama_index.core.llms.types import ChatMessage
+from llama_index.schema import NodeWithScore
 
 COMMAND_MODELS = {
     "command": 4096,
@@ -109,4 +110,17 @@ def messages_to_cohere_history(
 ) -> List[Dict[str, Optional[str]]]:
     return [
         {"user_name": message.role, "message": message.content} for message in messages
+    ]
+
+
+def transform_nodes_to_cohere_documents_list(
+    nodes: List[NodeWithScore],
+) -> List[Dict[str, Any]]:
+    """Transform nodes to cohere documents list."""
+    return [
+        {
+            "id": node.node_id,
+            "snippet": node.get_text(),
+        }
+        for node in nodes
     ]
