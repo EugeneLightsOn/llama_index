@@ -116,11 +116,11 @@ def messages_to_cohere_history(
 def transform_nodes_to_cohere_documents_list(
     nodes: List[NodeWithScore],
 ) -> List[Dict[str, Any]]:
-    """Transform nodes to cohere documents list."""
+    """Transform nodes to a Сohere documents list."""
     return [
         {
             "id": node.node_id,
-            "snippet": node.get_text(),
+            "text": node.get_text(),
         }
         for node in nodes
     ]

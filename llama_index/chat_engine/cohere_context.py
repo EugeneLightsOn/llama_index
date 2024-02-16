@@ -4,8 +4,8 @@ from typing import Any, List, Optional, Tuple, Dict
 
 from llama_index.callbacks import trace_method
 from llama_index.chat_engine.types import (
-    AgentChatResponse,
-    StreamingAgentChatResponse,
+    CohereAgentChatResponse,
+    CohereStreamingAgentChatResponse,
     ToolOutput,
 )
 from llama_index.core.base_retriever import BaseRetriever
@@ -16,18 +16,20 @@ from llama_index.chat_engine import ContextChatEngine
 from llama_index.llms.cohere_utils import transform_nodes_to_cohere_documents_list
 
 
-class CohereContextPlusCitationsChatEngine(ContextChatEngine):
+class CohereContextChatEngine(ContextChatEngine):
     """Cohere Context + Citations Chat Engine.
 
     Uses a retriever to retrieve a context, set the context in the Cohere
     documents param(https://docs.cohere.com/docs/retrieval-augmented-generation-rag),
     and then uses an LLM to generate a response.
+
+    NOTE: this is made to be compatible with Cohere's chat model Document mode
     """
 
     @trace_method("chat")
     def chat(
         self, message: str, chat_history: Optional[List[ChatMessage]] = None
-    ) -> AgentChatResponse:
+    ) -> CohereAgentChatResponse:
         if chat_history is not None:
             self._memory.set(chat_history)
         self._memory.put(ChatMessage(content=message, role="user"))
@@ -43,18 +45,16 @@ class CohereContextPlusCitationsChatEngine(ContextChatEngine):
         ai_message = chat_response.message
         self._memory.put(ai_message)
 
-        return AgentChatResponse(
+        return CohereAgentChatResponse(
             response=str(chat_response.message.content),
+            citations=chat_response.raw.get("citations", []),
+            documents=chat_response.raw.get("documents", []),
             sources=[
                 ToolOutput(
                     tool_name="retriever",
                     content=str(prefix_messages[0]),
                     raw_input={"message": message},
-                    raw_output={
-                        "prefix_message": prefix_messages[0],
-                        "documents_list": chat_response.raw.get("documents", []),
-                        "citations": chat_response.raw.get("citations", []),
-                    },
+                    raw_output=prefix_messages[0],
                 )
             ],
             source_nodes=nodes,
@@ -63,7 +63,7 @@ class CohereContextPlusCitationsChatEngine(ContextChatEngine):
     @trace_method("chat")
     def stream_chat(
         self, message: str, chat_history: Optional[List[ChatMessage]] = None
-    ) -> StreamingAgentChatResponse:
+    ) -> CohereStreamingAgentChatResponse:
         if chat_history is not None:
             self._memory.set(chat_history)
         self._memory.put(ChatMessage(content=message, role="user"))
@@ -72,7 +72,7 @@ class CohereContextPlusCitationsChatEngine(ContextChatEngine):
         prefix_messages = self._get_prefix_messages_with_context(context_str_template)
         all_messages = self._memory.get_all()
         documents_list = transform_nodes_to_cohere_documents_list(nodes)
-        chat_response = StreamingAgentChatResponse(
+        chat_response = CohereStreamingAgentChatResponse(
             chat_stream=self._llm.stream_chat(all_messages, documents=documents_list),
             sources=[
                 ToolOutput(
@@ -94,7 +94,7 @@ class CohereContextPlusCitationsChatEngine(ContextChatEngine):
     @trace_method("chat")
     async def achat(
         self, message: str, chat_history: Optional[List[ChatMessage]] = None
-    ) -> AgentChatResponse:
+    ) -> CohereAgentChatResponse:
         # TODO ask TJ do we need to set chat history?
         if chat_history is not None:
             self._memory.set(chat_history)
@@ -109,18 +109,16 @@ class CohereContextPlusCitationsChatEngine(ContextChatEngine):
         ai_message = chat_response.message
         self._memory.put(ai_message)
 
-        return AgentChatResponse(
+        return CohereAgentChatResponse(
             response=str(chat_response.message.content),
+            citations=chat_response.raw.get("citations", []),
+            documents=chat_response.raw.get("documents", []),
             sources=[
                 ToolOutput(
                     tool_name="retriever",
                     content=str(prefix_messages[0]),
                     raw_input={"message": message},
-                    raw_output={
-                        "prefix_message": prefix_messages[0],
-                        "documents_list": chat_response.raw.get("documents", []),
-                        "citations": chat_response.raw.get("citations", []),
-                    },
+                    raw_output=prefix_messages[0],
                 )
             ],
             source_nodes=nodes,
@@ -129,7 +127,7 @@ class CohereContextPlusCitationsChatEngine(ContextChatEngine):
     @trace_method("chat")
     async def astream_chat(
         self, message: str, chat_history: Optional[List[ChatMessage]] = None
-    ) -> StreamingAgentChatResponse:
+    ) -> CohereStreamingAgentChatResponse:
         if chat_history is not None:
             self._memory.set(chat_history)
         self._memory.put(ChatMessage(content=message, role="user"))

@@ -407,10 +407,10 @@ class BaseIndex(Generic[IS], ABC):
             return SimpleChatEngine.from_defaults(
                 **kwargs,
             )
-        elif chat_mode == ChatMode.COHERE_CONTEXT_PLUS_CITATIONS:
-            from llama_index.chat_engine import CohereContextPlusCitationsChatEngine
+        elif chat_mode == ChatMode.COHERE_CONTEXT:
+            from llama_index.chat_engine import CohereContextChatEngine
 
-            return CohereContextPlusCitationsChatEngine.from_defaults(
+            return CohereContextChatEngine.from_defaults(
                 retriever=self.as_retriever(**kwargs),
                 **kwargs,
             )

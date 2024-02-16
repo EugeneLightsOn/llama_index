@@ -16,6 +16,7 @@ from llama_index.core.response.schema import Response, StreamingResponse
 from llama_index.memory import BaseMemory
 from llama_index.schema import NodeWithScore
 from llama_index.tools import ToolOutput
+from cohere.responses.chat import StreamEvent
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -195,6 +196,168 @@ class StreamingAgentChatResponse:
             print(token, end="", flush=True)
 
 
+@dataclass
+class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
+    """Streaming chat response to user and writing to chat history."""
+    citations: List[dict] = field(default_factory=list)
+    documents: List[dict] = field(default_factory=list)
+    _documents_queue: queue.Queue = field(default_factory=queue.Queue)
+    _documents_aqueue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    _citations_queue: queue.Queue = field(default_factory=queue.Queue)
+    _citations_aqueue: asyncio.Queue = field(default_factory=asyncio.Queue)
+
+    def put_in_queue(self, queue: queue.Queue, delta: Optional[str]) -> None:
+        queue.put_nowait(delta)
+
+    def aput_in_queue(self, queue: asyncio.Queue, delta: Optional[str]) -> None:
+        queue.put_nowait(delta)
+        self._new_item_event.set()
+
+    def write_response_to_history(
+        self, memory: BaseMemory, raise_error: bool = False
+    ) -> None:
+        if self.chat_stream is None:
+            raise ValueError(
+                "chat_stream is None. Cannot write to history without chat_stream."
+            )
+
+        # try/except to prevent hanging on error
+        try:
+            final_text = ""
+            for chat in self.chat_stream:
+                # Cohere response queue
+                self.put_in_queue(self._queue, chat.delta)
+                # Citations queue
+                if chat.raw.get("event_type", "") == StreamEvent.CITATION_GENERATION:
+                    self.put_in_queue(
+                        self._citations_queue, chat.raw.get("citations", [])
+                    )
+                # Documents queue
+                if chat.raw.get("event_type", "") == StreamEvent.SEARCH_RESULTS:
+                    self.put_in_queue(
+                        self._documents_queue, chat.raw.get("documents", [])
+                    )
+                # TODO  Ask TJ - maybe we'll need it
+                final_text += chat.delta or ""
+        except Exception as e:
+            if not raise_error:
+                logger.warning(
+                    f"Encountered exception writing response to history: {e}"
+                )
+            else:
+                raise
+
+        self._is_done = True
+
+        # This act as is_done events for any consumers waiting
+        self._is_function_not_none_thread_event.set()
+
+    async def awrite_response_to_history(
+        self,
+        memory: BaseMemory,
+    ) -> None:
+        if self.achat_stream is None:
+            raise ValueError(
+                "achat_stream is None. Cannot asynchronously write to "
+                "history without achat_stream."
+            )
+
+        # try/except to prevent hanging on error
+        try:
+            final_text = ""
+            async for chat in self.achat_stream:
+                # Cohere response queue
+                self.aput_in_queue(self._aqueue, chat.delta)
+                # Citations queue
+                if chat.raw.get("event_type", "") == StreamEvent.CITATION_GENERATION:
+                    self.aput_in_queue(
+                        self._citations_aqueue, chat.raw.get("citations", [])
+                    )
+                # Documents queue
+                if chat.raw.get("event_type", "") == StreamEvent.SEARCH_RESULTS:
+                    self.aput_in_queue(
+                        self._documents_aqueue, chat.raw.get("documents", [])
+                    )
+                # TODO  Ask TJ - maybe we'll need it
+                final_text += chat.delta or ""
+
+        except Exception as e:
+            logger.warning(f"Encountered exception writing response to history: {e}")
+        self._is_done = True
+
+        # These act as is_done events for any consumers waiting
+        self._is_function_false_event.set()
+        self._new_item_event.set()
+
+    def _generator_from_queue(self, queue: queue.Queue, destination) -> Generator[any, None, None]:
+        while not self._is_done or not queue.empty():
+            try:
+                delta = queue.get(block=False)
+                destination += delta
+                yield delta
+            except queue.Empty:
+                # Queue is empty, but we're not done yet
+                continue
+
+    async def _async_generator_from_queue(
+        self, queue: asyncio.Queue, destination
+    ) -> AsyncGenerator[any, None]:
+        while not self._is_done or not queue.empty():
+            if not queue.empty():
+                delta = self.queue.get_nowait()
+                destination += delta
+                yield delta
+            else:
+                await self._new_item_event.wait()  # Wait until a new item is added
+                self._new_item_event.clear()  # Clear the event for the next wait
+
+    @property
+    def documents_response_gen(self) -> Generator[any, None, None]:
+        return self._generator_from_queue(self._documents_queue, self.documents)
+
+    async def documents_async_response_gen(self) -> AsyncGenerator[any, None]:
+        return await self._async_generator_from_queue(self._documents_aqueue, self.documents)
+
+    @property
+    def citations_response_gen(self) -> Generator[any, None, None]:
+        return self._generator_from_queue(self._citations_queue, self.citations)
+
+    async def citations_async_response_gen(self) -> AsyncGenerator[any, None]:
+        return await self._async_generator_from_queue(self._citations_aqueue, self.citations)
+
+    def print_response_stream(self) -> None:
+        for token in self.response_gen:
+            print(token, end="", flush=True)
+
+    def print_citations_stream(self) -> None:
+        for token in self.citations_response_gen:
+            print(token, end="", flush=True)
+
+    def print_documents_stream(self) -> None:
+        for token in self.documents_response_gen:
+            print(token, end="", flush=True)
+
+    async def aprint_response_stream(self) -> None:
+        async for token in self.async_response_gen():
+            print(token, end="", flush=True)
+
+    async def aprint_citations_stream(self) -> None:
+        async for token in self.citations_async_response_gen():
+            print(token, end="", flush=True)
+
+    async def aprint_documents_stream(self) -> None:
+        async for token in self.documents_async_response_gen():
+            print(token, end="", flush=True)
+
+
+@dataclass
+class CohereAgentChatResponse(AgentChatResponse):
+    """Cohere Agent chat response. Adds citations and documents to the response."""
+
+    citations: List[dict] = field(default_factory=list)
+    documents: List[dict] = field(default_factory=list)
+
+
 AGENT_CHAT_RESPONSE_TYPE = Union[AgentChatResponse, StreamingAgentChatResponse]
 
 
@@ -311,8 +474,8 @@ class ChatMode(str, Enum):
     function calling API, otherwise, corresponds to `ReActAgent`.
     """
 
-    COHERE_CONTEXT_PLUS_CITATIONS = "cohere_context_plus_citations"
-    """Corresponds to `CohereContextPlusCitationsChatEngine`.
+    COHERE_CONTEXT = "cohere_context"
+    """Corresponds to `CohereContextChatEngine`.
 
     First retrieve text from the index using the user's message, then convert the context to 
     the Cohere documents list. Then pass the context along with prompt and user message to LLM to generate 
