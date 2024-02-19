@@ -237,8 +237,9 @@ class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
                     self.put_in_queue(
                         self._documents_queue, chat.raw.get("documents", [])
                     )
-                # TODO  Ask TJ - maybe we'll need it
                 final_text += chat.delta or ""
+            chat.message.content = final_text.strip()  # final message
+            memory.put(chat.message)
         except Exception as e:
             if not raise_error:
                 logger.warning(
@@ -278,8 +279,9 @@ class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
                     self.aput_in_queue(
                         self._documents_aqueue, chat.raw.get("documents", [])
                     )
-                # TODO  Ask TJ - maybe we'll need it
                 final_text += chat.delta or ""
+            chat.message.content = final_text.strip()  # final message
+            memory.put(chat.message)
 
         except Exception as e:
             logger.warning(f"Encountered exception writing response to history: {e}")

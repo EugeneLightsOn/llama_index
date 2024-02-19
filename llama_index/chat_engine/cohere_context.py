@@ -41,7 +41,6 @@ class CohereContextChatEngine(ContextChatEngine):
         documents_list = transform_nodes_to_cohere_documents_list(nodes)
         # and then uses an LLM to generate a response
         chat_response = self._llm.chat(all_messages, documents=documents_list)
-        # TODO ask TJ do we need it?
         ai_message = chat_response.message
         self._memory.put(ai_message)
 
@@ -95,7 +94,6 @@ class CohereContextChatEngine(ContextChatEngine):
     async def achat(
         self, message: str, chat_history: Optional[List[ChatMessage]] = None
     ) -> CohereAgentChatResponse:
-        # TODO ask TJ do we need to set chat history?
         if chat_history is not None:
             self._memory.set(chat_history)
         self._memory.put(ChatMessage(content=message, role="user"))
