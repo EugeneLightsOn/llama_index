@@ -195,7 +195,12 @@ class StreamingAgentChatResponse:
         async for token in self.async_response_gen():
             print(token, end="", flush=True)
 
+@dataclass
+class CohereAgentChatResponse(AgentChatResponse):
+    """Cohere Agent chat response. Adds citations and documents to the response."""
 
+    citations: List[dict] = field(default_factory=list)
+    documents: List[dict] = field(default_factory=list)
 @dataclass
 class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
     """Streaming chat response to user and writing to chat history."""
@@ -301,13 +306,20 @@ class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
                 # Queue is empty, but we're not done yet
                 continue
 
-    async def _async_generator_from_queue(
-        self, queue: asyncio.Queue, destination
-    ) -> AsyncGenerator[any, None]:
-        while not self._is_done or not queue.empty():
-            if not queue.empty():
-                delta = self.queue.get_nowait()
-                destination += delta
+    async def documents_async_response_gen(self) -> AsyncGenerator[any, None]:
+        while not self._is_done or not self._documents_aqueue.empty():
+            if not self._documents_aqueue.empty():
+                delta = self._documents_aqueue.get_nowait()
+                self.documents += delta
+                yield delta
+            else:
+                await self._new_item_event.wait()  # Wait until a new item is added
+                self._new_item_event.clear()  # Clear the event for the next wait
+    async def citations_async_response_gen(self) -> AsyncGenerator[any, None]:
+        while not self._is_done or not self._citations_aqueue.empty():
+            if not self._citations_aqueue.empty():
+                delta = self._citations_aqueue.get_nowait()
+                self.citations += delta
                 yield delta
             else:
                 await self._new_item_event.wait()  # Wait until a new item is added
@@ -317,15 +329,11 @@ class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
     def documents_response_gen(self) -> Generator[any, None, None]:
         return self._generator_from_queue(self._documents_queue, self.documents)
 
-    async def documents_async_response_gen(self) -> AsyncGenerator[any, None]:
-        return await self._async_generator_from_queue(self._documents_aqueue, self.documents)
 
     @property
     def citations_response_gen(self) -> Generator[any, None, None]:
         return self._generator_from_queue(self._citations_queue, self.citations)
 
-    async def citations_async_response_gen(self) -> AsyncGenerator[any, None]:
-        return await self._async_generator_from_queue(self._citations_aqueue, self.citations)
 
     def print_response_stream(self) -> None:
         for token in self.response_gen:
@@ -351,13 +359,6 @@ class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
         async for token in self.documents_async_response_gen():
             print(token, end="", flush=True)
 
-
-@dataclass
-class CohereAgentChatResponse(AgentChatResponse):
-    """Cohere Agent chat response. Adds citations and documents to the response."""
-
-    citations: List[dict] = field(default_factory=list)
-    documents: List[dict] = field(default_factory=list)
 
 
 AGENT_CHAT_RESPONSE_TYPE = Union[AgentChatResponse, StreamingAgentChatResponse]

@@ -135,7 +135,7 @@ class CohereContextChatEngine(ContextChatEngine):
 
         all_messages = self._memory.get_all()
         documents_list = transform_nodes_to_cohere_documents_list(nodes)
-        chat_response = StreamingAgentChatResponse(
+        chat_response = CohereStreamingAgentChatResponse(
             achat_stream=await self._llm.astream_chat(
                 all_messages, documents=documents_list
             ),
@@ -149,8 +149,10 @@ class CohereContextChatEngine(ContextChatEngine):
             ],
             source_nodes=nodes,
         )
+        loop = asyncio.get_event_loop()
         thread = Thread(
-            target=lambda x: asyncio.run(chat_response.awrite_response_to_history(x)),
+            target=lambda x: loop.create_task(chat_response.awrite_response_to_history(x)),
+            # target=lambda x: asyncio.run(chat_response.awrite_response_to_history(x)),
             args=(self._memory,),
         )
         thread.start()
