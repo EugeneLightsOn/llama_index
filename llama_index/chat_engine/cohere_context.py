@@ -152,7 +152,6 @@ class CohereContextChatEngine(ContextChatEngine):
         loop = asyncio.get_event_loop()
         thread = Thread(
             target=lambda x: loop.create_task(chat_response.awrite_response_to_history(x)),
-            # target=lambda x: asyncio.run(chat_response.awrite_response_to_history(x)),
             args=(self._memory,),
         )
         thread.start()
