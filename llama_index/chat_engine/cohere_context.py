@@ -1,18 +1,15 @@
 import asyncio
 from threading import Thread
-from typing import Any, List, Optional, Tuple, Dict
+from typing import List, Optional
 
 from llama_index.callbacks import trace_method
+from llama_index.chat_engine.context import ContextChatEngine
 from llama_index.chat_engine.types import (
     CohereAgentChatResponse,
     CohereStreamingAgentChatResponse,
     ToolOutput,
 )
-from llama_index.core.base_retriever import BaseRetriever
-from llama_index.core.llms.types import ChatMessage, MessageRole
-from llama_index.llms.llm import LLM
-from llama_index.schema import NodeWithScore
-from llama_index.chat_engine import ContextChatEngine
+from llama_index.core.llms.types import ChatMessage
 from llama_index.llms.cohere_utils import transform_nodes_to_cohere_documents_list
 
 
@@ -46,8 +43,12 @@ class CohereContextChatEngine(ContextChatEngine):
 
         return CohereAgentChatResponse(
             response=str(chat_response.message.content),
-            citations=chat_response.raw.get("citations", []),
-            documents=chat_response.raw.get("documents", []),
+            citations=chat_response.raw.get("citations", [])
+            if chat_response.raw
+            else [],
+            documents=chat_response.raw.get("documents", [])
+            if chat_response.raw
+            else [],
             sources=[
                 ToolOutput(
                     tool_name="retriever",
@@ -109,8 +110,12 @@ class CohereContextChatEngine(ContextChatEngine):
 
         return CohereAgentChatResponse(
             response=str(chat_response.message.content),
-            citations=chat_response.raw.get("citations", []),
-            documents=chat_response.raw.get("documents", []),
+            citations=chat_response.raw.get("citations", [])
+            if chat_response.raw
+            else [],
+            documents=chat_response.raw.get("documents", [])
+            if chat_response.raw
+            else [],
             sources=[
                 ToolOutput(
                     tool_name="retriever",
@@ -151,7 +156,9 @@ class CohereContextChatEngine(ContextChatEngine):
         )
         loop = asyncio.get_event_loop()
         thread = Thread(
-            target=lambda x: loop.create_task(chat_response.awrite_response_to_history(x)),
+            target=lambda x: loop.create_task(
+                chat_response.awrite_response_to_history(x)
+            ),
             args=(self._memory,),
         )
         thread.start()

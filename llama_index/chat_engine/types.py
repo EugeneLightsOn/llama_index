@@ -7,6 +7,8 @@ from enum import Enum
 from threading import Event
 from typing import AsyncGenerator, Generator, List, Optional, Union
 
+from cohere.responses.chat import StreamEvent
+
 from llama_index.core.llms.types import (
     ChatMessage,
     ChatResponseAsyncGen,
@@ -16,7 +18,6 @@ from llama_index.core.response.schema import Response, StreamingResponse
 from llama_index.memory import BaseMemory
 from llama_index.schema import NodeWithScore
 from llama_index.tools import ToolOutput
-from cohere.responses.chat import StreamEvent
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -195,15 +196,19 @@ class StreamingAgentChatResponse:
         async for token in self.async_response_gen():
             print(token, end="", flush=True)
 
+
 @dataclass
 class CohereAgentChatResponse(AgentChatResponse):
     """Cohere Agent chat response. Adds citations and documents to the response."""
 
     citations: List[dict] = field(default_factory=list)
     documents: List[dict] = field(default_factory=list)
+
+
 @dataclass
 class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
     """Streaming chat response to user and writing to chat history."""
+
     citations: List[dict] = field(default_factory=list)
     documents: List[dict] = field(default_factory=list)
     _documents_queue: queue.Queue = field(default_factory=queue.Queue)
@@ -211,10 +216,10 @@ class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
     _citations_queue: queue.Queue = field(default_factory=queue.Queue)
     _citations_aqueue: asyncio.Queue = field(default_factory=asyncio.Queue)
 
-    def put_in_queue(self, queue: queue.Queue, delta: Optional[str]) -> None:
+    def put_in_the_queue(self, queue: queue.Queue, delta: Optional[str]) -> None:
         queue.put_nowait(delta)
 
-    def aput_in_queue(self, queue: asyncio.Queue, delta: Optional[str]) -> None:
+    def aput_in_the_queue(self, queue: asyncio.Queue, delta: Optional[str]) -> None:
         queue.put_nowait(delta)
         self._new_item_event.set()
 
@@ -231,17 +236,21 @@ class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
             final_text = ""
             for chat in self.chat_stream:
                 # Cohere response queue
-                self.put_in_queue(self._queue, chat.delta)
-                # Citations queue
-                if chat.raw.get("event_type", "") == StreamEvent.CITATION_GENERATION:
-                    self.put_in_queue(
-                        self._citations_queue, chat.raw.get("citations", [])
-                    )
-                # Documents queue
-                if chat.raw.get("event_type", "") == StreamEvent.SEARCH_RESULTS:
-                    self.put_in_queue(
-                        self._documents_queue, chat.raw.get("documents", [])
-                    )
+                self.put_in_queue(chat.delta)
+                if chat.raw is not None:
+                    # Citations queue
+                    if (
+                        chat.raw.get("event_type", "")
+                        == StreamEvent.CITATION_GENERATION
+                    ):
+                        self.put_in_the_queue(
+                            self._citations_queue, chat.raw.get("citations", [])
+                        )
+                    # Documents queue
+                    if chat.raw.get("event_type", "") == StreamEvent.SEARCH_RESULTS:
+                        self.put_in_the_queue(
+                            self._documents_queue, chat.raw.get("documents", [])
+                        )
                 final_text += chat.delta or ""
             chat.message.content = final_text.strip()  # final message
             memory.put(chat.message)
@@ -273,17 +282,21 @@ class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
             final_text = ""
             async for chat in self.achat_stream:
                 # Cohere response queue
-                self.aput_in_queue(self._aqueue, chat.delta)
-                # Citations queue
-                if chat.raw.get("event_type", "") == StreamEvent.CITATION_GENERATION:
-                    self.aput_in_queue(
-                        self._citations_aqueue, chat.raw.get("citations", [])
-                    )
-                # Documents queue
-                if chat.raw.get("event_type", "") == StreamEvent.SEARCH_RESULTS:
-                    self.aput_in_queue(
-                        self._documents_aqueue, chat.raw.get("documents", [])
-                    )
+                self.aput_in_queue(chat.delta)
+                if chat.raw is not None:
+                    # Citations queue
+                    if (
+                        chat.raw.get("event_type", "")
+                        == StreamEvent.CITATION_GENERATION
+                    ):
+                        self.aput_in_the_queue(
+                            self._citations_aqueue, chat.raw.get("citations", [])
+                        )
+                    # Documents queue
+                    if chat.raw.get("event_type", "") == StreamEvent.SEARCH_RESULTS:
+                        self.aput_in_the_queue(
+                            self._documents_aqueue, chat.raw.get("documents", [])
+                        )
                 final_text += chat.delta or ""
             chat.message.content = final_text.strip()  # final message
             memory.put(chat.message)
@@ -296,17 +309,19 @@ class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
         self._is_function_false_event.set()
         self._new_item_event.set()
 
-    def _generator_from_queue(self, queue: queue.Queue, destination) -> Generator[any, None, None]:
-        while not self._is_done or not queue.empty():
+    def _generator_from_queue(
+        self, target_queue: queue.Queue, destination: List[dict]
+    ) -> Generator[str, None, None]:
+        while not self._is_done or not target_queue.empty():
             try:
-                delta = queue.get(block=False)
+                delta = target_queue.get(block=False)
                 destination += delta
                 yield delta
             except queue.Empty:
                 # Queue is empty, but we're not done yet
                 continue
 
-    async def documents_async_response_gen(self) -> AsyncGenerator[any, None]:
+    async def documents_async_response_gen(self) -> AsyncGenerator[str, None]:
         while not self._is_done or not self._documents_aqueue.empty():
             if not self._documents_aqueue.empty():
                 delta = self._documents_aqueue.get_nowait()
@@ -315,7 +330,8 @@ class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
             else:
                 await self._new_item_event.wait()  # Wait until a new item is added
                 self._new_item_event.clear()  # Clear the event for the next wait
-    async def citations_async_response_gen(self) -> AsyncGenerator[any, None]:
+
+    async def citations_async_response_gen(self) -> AsyncGenerator[str, None]:
         while not self._is_done or not self._citations_aqueue.empty():
             if not self._citations_aqueue.empty():
                 delta = self._citations_aqueue.get_nowait()
@@ -326,14 +342,12 @@ class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
                 self._new_item_event.clear()  # Clear the event for the next wait
 
     @property
-    def documents_response_gen(self) -> Generator[any, None, None]:
+    def documents_response_gen(self) -> Generator[str, None, None]:
         return self._generator_from_queue(self._documents_queue, self.documents)
 
-
     @property
-    def citations_response_gen(self) -> Generator[any, None, None]:
+    def citations_response_gen(self) -> Generator[str, None, None]:
         return self._generator_from_queue(self._citations_queue, self.citations)
-
 
     def print_response_stream(self) -> None:
         for token in self.response_gen:
@@ -358,7 +372,6 @@ class CohereStreamingAgentChatResponse(StreamingAgentChatResponse):
     async def aprint_documents_stream(self) -> None:
         async for token in self.documents_async_response_gen():
             print(token, end="", flush=True)
-
 
 
 AGENT_CHAT_RESPONSE_TYPE = Union[AgentChatResponse, StreamingAgentChatResponse]
@@ -480,7 +493,7 @@ class ChatMode(str, Enum):
     COHERE_CONTEXT = "cohere_context"
     """Corresponds to `CohereContextChatEngine`.
 
-    First retrieve text from the index using the user's message, then convert the context to 
-    the Cohere documents list. Then pass the context along with prompt and user message to LLM to generate 
-    a response with citations and related documents 
+    First retrieve text from the index using the user's message, then convert the context to
+    the Cohere documents list. Then pass the context along with prompt and user message to LLM to generate
+    a response with citations and related documents
     """
